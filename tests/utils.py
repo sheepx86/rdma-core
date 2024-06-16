@@ -21,10 +21,8 @@ from pyverbs.pyverbs_error import PyverbsError, PyverbsRDMAError
 from tests.mlx5_base import Mlx5DcResources, Mlx5DcStreamsRes
 from tests.base import XRCResources, DCT_KEY, MLNX_VENDOR_ID
 from pyverbs.addr import AHAttr, AH, GlobalRoute
-from pyverbs.providers.efa.efadv import EfaCQ
 from pyverbs.wr import SGE, SendWR, RecvWR
 from pyverbs.base import PyverbsRDMAErrno
-from tests.efa_base import SRDResources
 from pyverbs.cq import PollCqAttr, CQEX
 from pyverbs.mr import MW, MWBindInfo
 from pyverbs.mem_alloc import madvise
@@ -109,6 +107,7 @@ class PacketConsts:
     BTH_HEADER_SIZE = 16
     BTH_OPCODE = 0x81
     BTH_DST_QP = 0xd2
+    BTH_A = 0x1
     BTH_PARTITION_KEY = 0xffff
     BTH_BECN = 1
     ROCE_PORT = 4791
@@ -468,7 +467,7 @@ def xrc_post_send(agr_obj, qp_num, send_object, send_op=None):
         post_send(agr_obj, send_object)
 
 
-def post_send_ex(agr_obj, send_object, send_op=None, qp_idx=0, ah=None, **kwargs):
+def post_send_ex(agr_obj, send_object, send_op=None, qp_idx=0, ah=None):
     qp = agr_obj.qps[qp_idx]
     qp_type = qp.qp_type
     qp.wr_start()
@@ -490,14 +489,11 @@ def post_send_ex(agr_obj, send_object, send_op=None, qp_idx=0, ah=None, **kwargs
     elif send_op == e.IBV_WR_RDMA_READ:
         qp.wr_rdma_read(agr_obj.rkey, agr_obj.raddr)
     elif send_op == e.IBV_WR_ATOMIC_CMP_AND_SWP:
-        cmp_add = kwargs.get('cmp_add')
-        swp = kwargs.get('swap')
         qp.wr_atomic_cmp_swp(agr_obj.rkey, agr_obj.raddr,
-                             int8b_from_int(cmp_add), int8b_from_int(swp))
+                             int8b_from_int(2), int8b_from_int(0))
     elif send_op == e.IBV_WR_ATOMIC_FETCH_AND_ADD:
-        cmp_add = kwargs.get('cmp_add')
         qp.wr_atomic_fetch_add(agr_obj.rkey, agr_obj.raddr,
-                               int8b_from_int(cmp_add))
+                               int8b_from_int(2))
     elif send_op == e.IBV_WR_BIND_MW:
         bind_info = MWBindInfo(agr_obj.mr, agr_obj.mr.buf, agr_obj.mr.rkey,
                                e.IBV_ACCESS_REMOTE_WRITE)
@@ -507,8 +503,6 @@ def post_send_ex(agr_obj, send_object, send_op=None, qp_idx=0, ah=None, **kwargs
         qp.wr_send()
     if qp_type == e.IBV_QPT_UD:
         qp.wr_set_ud_addr(ah, agr_obj.rqps_num[qp_idx], agr_obj.UD_QKEY)
-    if isinstance(agr_obj, SRDResources):
-        qp.wr_set_ud_addr(ah, agr_obj.rqps_num[qp_idx], agr_obj.SRD_QKEY)
     if qp_type == e.IBV_QPT_XRC_SEND:
         qp.wr_set_xrc_srqn(agr_obj.remote_srqn)
     if hasattr(agr_obj, 'remote_dct_num'):
@@ -542,8 +536,6 @@ def post_send(agr_obj, send_wr, qp_idx=0, ah=None, is_imm=False):
         send_wr.imm_data = socket.htonl(IMM_DATA)
     if qp_type == e.IBV_QPT_UD:
         send_wr.set_wr_ud(ah, agr_obj.rqps_num[qp_idx], agr_obj.UD_QKEY)
-    if isinstance(agr_obj, SRDResources):
-        send_wr.set_wr_ud(ah, agr_obj.rqps_num[qp_idx], agr_obj.SRD_QKEY)
     agr_obj.qps[qp_idx].post_send(send_wr, None)
 
 
@@ -649,9 +641,6 @@ def poll_cq_ex(cqex, count=1, data=None, sgid=None):
         if data:
             assert data == socket.ntohl(cqex.read_imm_data())
 
-        if isinstance(cqex, EfaCQ):
-            if sgid is not None and cqex.read_opcode() == e.IBV_WC_RECV:
-                assert sgid.gid == cqex.read_sgid().gid
         # Now poll the rest of the packets
         while count > 0 and (time.perf_counter() - start_poll_t < POLL_CQ_TIMEOUT):
             ret = cqex.poll_next()
@@ -666,9 +655,6 @@ def poll_cq_ex(cqex, count=1, data=None, sgid=None):
             if data:
                 assert data == socket.ntohl(cqex.read_imm_data())
 
-            if isinstance(cqex, EfaCQ):
-                if sgid is not None and cqex.read_opcode() == e.IBV_WC_RECV:
-                    assert sgid.gid == cqex.read_sgid().gid
             count -= 1
         if count > 0:
             raise PyverbsError(f'Got timeout on polling ({count} CQEs remaining)')
@@ -700,12 +686,11 @@ def validate(received_str, is_server, msg_size):
                 format(exp=expected_str, rcv=received_str))
 
 
-def send(agr_obj, send_object, send_op=None, new_send=False, qp_idx=0, ah=None, is_imm=False,
-         **kwargs):
+def send(agr_obj, send_object, send_op=None, new_send=False, qp_idx=0, ah=None, is_imm=False):
     if isinstance(agr_obj, XRCResources):
         agr_obj.qps = agr_obj.sqp_lst
     if new_send:
-        return post_send_ex(agr_obj, send_object, send_op, qp_idx, ah, **kwargs)
+        return post_send_ex(agr_obj, send_object, send_op, qp_idx, ah)
     return post_send(agr_obj, send_object, qp_idx, ah, is_imm)
 
 
@@ -857,15 +842,16 @@ def gen_geneve_header(vni=PacketConsts.GENEVE_VNI, oam=PacketConsts.GENEVE_OAM,
     """
     return struct.pack('!BBHL', (0 << 6) + 0, (oam << 7) + (0 << 6) + 0, proto, (vni << 8) + 0)
 
-def gen_bth_header(opcode=PacketConsts.BTH_OPCODE, dst_qp=PacketConsts.BTH_DST_QP):
+def gen_bth_header(opcode=PacketConsts.BTH_OPCODE, dst_qp=PacketConsts.BTH_DST_QP, a=PacketConsts.BTH_A):
     """
     Generates ROCE BTH header using the values from the PacketConst class by default.
     :param opcode: BTH opcode
     :param dst_qp: BTH dst QP
+    :param a: BTH acknowledgment bit
     :return: ROCE BTH header
     """
     return struct.pack('!2BH2BH2L', opcode, 0, PacketConsts.BTH_PARTITION_KEY,
-                       PacketConsts.BTH_BECN << 6, dst_qp >> 16, dst_qp & 0xffff, 0, 0)
+                       PacketConsts.BTH_BECN << 6, dst_qp >> 16, dst_qp & 0xffff, a << 31, 0)
 
 
 def gen_packet(msg_size, l3=PacketConsts.IP_V4, l4=PacketConsts.UDP_PROTO, with_vlan=False, **kwargs):
@@ -1127,8 +1113,7 @@ def rdma_traffic(client, server, iters, gid_idx, port, new_send=False,
     :return:
     """
     # Using the new post send API, we need the SGE, not the SendWR
-    if isinstance(client, Mlx5DcResources) or \
-       isinstance(client, SRDResources):
+    if isinstance(client, Mlx5DcResources):
         ah_client = get_global_ah(client, gid_idx, port)
         ah_server = get_global_ah(server, gid_idx, port)
     else:
@@ -1165,8 +1150,7 @@ def rdma_traffic(client, server, iters, gid_idx, port, new_send=False,
 
 
 def atomic_traffic(client, server, iters, gid_idx, port, new_send=False,
-                   send_op=None, receiver_val=1, sender_val=2, swap=0,
-                   client_wr=1, server_wr=1, **kwargs):
+                   send_op=None, receiver_val=1, sender_val=2, **kwargs):
     """
     Runs atomic traffic between two sides.
     :param client: Client side, clients base class is BaseTraffic
@@ -1178,49 +1162,32 @@ def atomic_traffic(client, server, iters, gid_idx, port, new_send=False,
     :param send_op: The send_wr opcode.
     :param receiver_val: The requested value on the reciver MR.
     :param sender_val: The requested value on the sender SendWR.
-    :param client_wr: Number of WR the client will post before polling all of them
-    :param server_wr: Number of WR the server will post before polling all of them
     :param kwargs: General arguments (shared with other traffic functions).
     """
     send_element_idx = 1 if new_send else 0
-    if is_datagram_qp(client):
-        ah_client = get_global_ah(client, gid_idx, port)
-        ah_server = get_global_ah(server, gid_idx, port)
-    else:
-        ah_client = None
-        ah_server = None
-
     for _ in range(iters):
         client.mr.write(int.to_bytes(sender_val, 1, byteorder='big') * 8, 8)
         server.mr.write(int.to_bytes(receiver_val, 1, byteorder='big') * 8, 8)
-        for _ in range(client_wr):
-            c_send_wr = get_atomic_send_elements(client,
-                                                 send_op,
-                                                 cmp_add=sender_val,
-                                                 swap=swap)[send_element_idx]
-            if isinstance(server, XRCResources):
-                c_send_wr.set_qp_type_xrc(server.srq.get_srq_num())
-            send(client, c_send_wr, send_op, new_send, ah=ah_client,
-                 cmp_add=sender_val, swap=swap)
-        poll_cq(client.cq, count=client_wr)
-        validate_atomic(send_op, server, client,
-                        receiver_val=receiver_val + sender_val * (client_wr - 1),
-                        send_cmp_add=sender_val, send_swp=swap)
+        c_send_wr = get_atomic_send_elements(client, send_op,
+                                             cmp_add=sender_val,
+                                             swap=0)[send_element_idx]
+        if isinstance(server, XRCResources):
+            c_send_wr.set_qp_type_xrc(server.srq.get_srq_num())
+        send(client, c_send_wr, send_op, new_send)
+        poll_cq(client.cq)
+        validate_atomic(send_op, server, client, receiver_val=receiver_val,
+                        send_cmp_add=sender_val, send_swp=0)
         server.mr.write(int.to_bytes(sender_val, 1, byteorder='big') * 8, 8)
         client.mr.write(int.to_bytes(receiver_val, 1, byteorder='big') * 8, 8)
-        for _ in range(server_wr):
-            s_send_wr = get_atomic_send_elements(server,
-                                                 send_op,
-                                                 cmp_add=sender_val,
-                                                 swap=swap)[send_element_idx]
-            if isinstance(client, XRCResources):
-                s_send_wr.set_qp_type_xrc(client.srq.get_srq_num())
-            send(server, s_send_wr, send_op, new_send, ah=ah_server,
-                 cmp_add=sender_val, swap=swap)
-        poll_cq(server.cq, count=server_wr)
-        validate_atomic(send_op, client, server,
-                        receiver_val=receiver_val + sender_val * (server_wr - 1),
-                        send_cmp_add=sender_val, send_swp=swap)
+        s_send_wr = get_atomic_send_elements(server, send_op,
+                                             cmp_add=sender_val,
+                                             swap=0)[send_element_idx]
+        if isinstance(client, XRCResources):
+            s_send_wr.set_qp_type_xrc(client.srq.get_srq_num())
+        send(server, s_send_wr, send_op, new_send)
+        poll_cq(server.cq)
+        validate_atomic(send_op, client, server, receiver_val=receiver_val,
+                        send_cmp_add=sender_val, send_swp=0)
 
 
 def validate_atomic(opcode, recv_player, send_player, receiver_val,
@@ -1533,7 +1500,6 @@ def is_eth(ctx, port_num):
 
 def is_datagram_qp(agr_obj):
     if agr_obj.qp.qp_type == e.IBV_QPT_UD or \
-       isinstance(agr_obj, SRDResources) or \
        isinstance(agr_obj, Mlx5DcResources):
         return True
     return False

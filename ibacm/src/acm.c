@@ -171,6 +171,7 @@ struct acm_nl_msg {
 	union {
 		uint8_t				data[ACM_MSG_DATA_LENGTH];
 		struct rdma_ls_resolve_header	resolve_header;
+		struct rdma_ls_ip_resolve_header ip_res_header;
 		struct nlattr			attr[0];
 		struct acm_nl_path		path[0];
 	};
@@ -197,6 +198,7 @@ static struct acmc_ep *acm_find_ep(struct acmc_port *port, uint16_t pkey);
 static int acm_ep_insert_addr(struct acmc_ep *ep, const char *name, uint8_t *addr,
 			      uint8_t addr_type);
 static void acm_event_handler(struct acmc_device *dev);
+static int acm_nl_send_ip_resolve(int sock, struct acm_msg *msg);
 static int acm_nl_send(int sock, struct acm_msg *msg);
 
 static struct sa_data {
@@ -245,6 +247,29 @@ void acm_write(int level, const char *format, ...)
 	fflush(flog);
 	pthread_mutex_unlock(&log_lock);
 	va_end(args);
+}
+
+static int acm_format_ep_addr(struct acm_ep_addr_data *data, uint8_t *addr,
+	uint8_t type, uint32_t flags)
+{
+	data->type   = type;
+	data->flags  = flags;
+
+	switch (type) {
+	case ACM_EP_INFO_NAME:
+		strncpy((char *) data->info.name,  (char *) addr,  ACM_MAX_ADDRESS);
+		break;
+	case ACM_EP_INFO_ADDRESS_IP:
+		memcpy(data->info.addr, addr, 4);
+		break;
+	case ACM_EP_INFO_ADDRESS_IP6:
+		memcpy(data->info.addr, addr, 16);
+		break;
+	default:
+		return -1;
+	}
+
+	return 0;
 }
 
 void acm_format_name(int level, char *name, size_t name_size,
@@ -1554,7 +1579,7 @@ static void acm_ipnl_handler(void)
 	}
 }
 
-static int acm_nl_send(int sock, struct acm_msg *msg)
+static int acm_nl_send_resolve(int sock, struct acm_msg *msg)
 {
 	struct sockaddr_nl dst_addr;
 	struct acm_nl_msg acmnlmsg;
@@ -1613,6 +1638,34 @@ static int acm_nl_send(int sock, struct acm_msg *msg)
 
 #define NLA_LEN(nla)	((nla)->nla_len - NLA_HDRLEN)
 #define NLA_DATA(nla)	((char *)(nla) + NLA_HDRLEN)
+
+static int acm_nl_parse_ip_attr(struct nlattr *attr,
+				struct __kernel_sockaddr_storage *ss)
+{
+	char *data;
+	int ret = 0;
+
+	switch (attr->nla_type & RDMA_NLA_TYPE_MASK) {
+	case LS_NLA_TYPE_IPV4:
+		data = NLA_DATA(attr);
+		ss->ss_family = AF_INET;
+		memcpy(ss->__data, data, 4);
+		break;
+
+	case LS_NLA_TYPE_IPV6:
+		data = NLA_DATA(attr);
+		ss->ss_family = AF_INET6;
+		memcpy(ss->__data, data, 16);
+		break;
+
+	default:
+		if (attr->nla_type & RDMA_NLA_F_MANDATORY)
+			ret = -1;
+		break;
+	}
+
+	return ret;
+}
 
 static int acm_nl_parse_path_attr(struct nlattr *attr,
 				   struct acm_ep_addr_data *data)
@@ -1727,6 +1780,129 @@ static void acm_nl_process_invalid_request(struct acmc_client *client,
 	acm_nl_send(client->sock, &msg);
 }
 
+static int acm_nl_send_ip_resolve(int sock, struct acm_msg *msg)
+{
+	struct sockaddr_nl dst_addr;
+	struct acm_nl_msg acmnlmsg;
+	struct acm_nl_msg *orig;
+	struct nlattr *attr;
+	int ret;
+	int datalen;
+
+	orig = (struct acm_nl_msg *) msg->hdr.tid;
+
+	memset(&dst_addr, 0, sizeof(dst_addr));
+	dst_addr.nl_family = AF_NETLINK;
+	dst_addr.nl_groups = (1 << (RDMA_NL_GROUP_LS - 1));
+
+	memset(&acmnlmsg, 0, sizeof(acmnlmsg));
+	acmnlmsg.nlmsg_header.nlmsg_len = NLMSG_HDRLEN;
+	acmnlmsg.nlmsg_header.nlmsg_pid = getpid();
+	acmnlmsg.nlmsg_header.nlmsg_type = orig->nlmsg_header.nlmsg_type;
+	acmnlmsg.nlmsg_header.nlmsg_seq = orig->nlmsg_header.nlmsg_seq;
+
+	if (msg->hdr.status != ACM_STATUS_SUCCESS) {
+		acm_log(2, "acm status no success = %d\n", msg->hdr.status);
+		acmnlmsg.nlmsg_header.nlmsg_flags |= RDMA_NL_LS_F_ERR;
+	} else {
+		attr = acmnlmsg.attr;
+
+		attr->nla_type = LS_NLA_TYPE_DGID;
+		attr->nla_len = NLA_ALIGN(sizeof(union ibv_gid) + NLA_HDRLEN);
+		memcpy(NLA_DATA(attr), msg->data, sizeof(union ibv_gid));
+		acmnlmsg.nlmsg_header.nlmsg_len += attr->nla_len;
+	}
+
+	datalen = NLMSG_ALIGN(acmnlmsg.nlmsg_header.nlmsg_len);
+	ret = sendto(sock, &acmnlmsg, datalen, 0,
+		     (const struct sockaddr *)&dst_addr,
+		     (socklen_t)sizeof(dst_addr));
+	if (ret != datalen) {
+		acm_log(0, "ERROR - sendto = %d errno = %d\n", ret, errno);
+		ret = -1;
+	} else {
+		ret = msg->hdr.length;
+	}
+
+	free(orig);
+
+	return ret;
+}
+
+static void __acm_nl_process_ip_resolve(struct acmc_client *client,
+					struct acm_nl_msg *acmnlmsg,
+					struct __kernel_sockaddr_storage *ss)
+{
+	struct acm_msg msg;
+	int ret;
+
+	memset(&msg, 0, sizeof msg);
+	msg.hdr.version = ACM_VERSION;
+	msg.hdr.opcode = ACM_OP_IP_RESOLVE;
+	msg.hdr.length = ACM_MSG_HDR_LENGTH + ACM_MSG_EP_LENGTH;
+	msg.hdr.status = ACM_STATUS_SUCCESS;
+	msg.hdr.tid = (uint64_t) acmnlmsg;
+
+	ret = acm_format_ep_addr(&msg.resolve_data[0], (uint8_t *)ss->__data,
+				 ACM_EP_INFO_ADDRESS_IP,
+				 ACM_EP_FLAG_DEST | ACM_FLAGS_NODELAY);
+	if (ret) {
+		acm_nl_process_invalid_request(client, acmnlmsg);
+		return;
+	}
+	atomic_inc(&counter[ACM_CNTR_RESOLVE]);
+	acm_svr_resolve(client, &msg);
+}
+
+static void acm_nl_process_ip_resolve(struct acmc_client *client,
+				      struct acm_nl_msg *acmnlmsg)
+{
+	struct __kernel_sockaddr_storage ss;
+	struct nlattr *attr;
+	int payload_len;
+	int ip_res_hdr_len;
+	int total_attr_len;
+	int rem;
+	int status;
+	unsigned char *data;
+
+	data = (unsigned char *) &acmnlmsg->nlmsg_header + NLMSG_HDRLEN;
+	ip_res_hdr_len = NLMSG_ALIGN(sizeof(struct rdma_ls_ip_resolve_header));
+	attr = (struct nlattr *) (data + ip_res_hdr_len);
+	payload_len = acmnlmsg->nlmsg_header.nlmsg_len - NLMSG_HDRLEN -
+		ip_res_hdr_len;
+
+	rem = payload_len;
+	while (1) {
+		if (rem < (int) sizeof(*attr) ||
+		    attr->nla_len < sizeof(*attr) ||
+		    attr->nla_len > rem)
+			break;
+
+		status = acm_nl_parse_ip_attr(attr, &ss);
+		if (status) {
+			acm_nl_process_invalid_request(client, acmnlmsg);
+			return;
+		}
+
+		/* Next attribute */
+		total_attr_len = NLA_ALIGN(attr->nla_len);
+		rem -= total_attr_len;
+		attr = (struct nlattr *) ((char *) attr + total_attr_len);
+	}
+
+	__acm_nl_process_ip_resolve(client, acmnlmsg, &ss);
+}
+
+static int acm_nl_send(int sock, struct acm_msg *msg)
+{
+	if ((msg->hdr.opcode & ACM_OP_MASK) == ACM_OP_IP_RESOLVE)
+		return acm_nl_send_ip_resolve(sock, msg);
+	else
+		return acm_nl_send_resolve(sock, msg);
+
+}
+
 static void acm_nl_process_resolve(struct acmc_client *client,
 				   struct acm_nl_msg *acmnlmsg)
 {
@@ -1784,16 +1960,28 @@ static void acm_nl_process_resolve(struct acmc_client *client,
 	acm_svr_resolve(client, &msg);
 }
 
-static int acm_nl_is_valid_resolve_request(struct acm_nl_msg *acmnlmsg)
+static int acm_nl_is_valid_request(struct acm_nl_msg *acmnlmsg, size_t size)
 {
 	int payload_len;
 
 	payload_len = acmnlmsg->nlmsg_header.nlmsg_len - NLMSG_HDRLEN;
-	if (payload_len < (sizeof(struct rdma_ls_resolve_header) +
-			   sizeof(struct nlattr)))
+	if (payload_len < size + sizeof(struct nlattr))
 		return 0;
 
 	return 1;
+
+}
+
+static int acm_nl_is_valid_resolve_request(struct acm_nl_msg *acmnlmsg)
+{
+	return acm_nl_is_valid_request(acmnlmsg,
+				       sizeof(struct rdma_ls_resolve_header));
+}
+
+static int acm_nl_is_valid_ip_resolve_request(struct acm_nl_msg *acmnlmsg)
+{
+	return acm_nl_is_valid_request(acmnlmsg,
+				       sizeof(struct rdma_ls_ip_resolve_header));
 }
 
 static void acm_nl_receive(struct acmc_client *client)
@@ -1836,6 +2024,14 @@ static void acm_nl_receive(struct acmc_client *client)
 		else
 			acm_nl_process_invalid_request(client, acmnlmsg);
 		break;
+
+	case RDMA_NL_LS_OP_IP_RESOLVE:
+		if (acm_nl_is_valid_ip_resolve_request(acmnlmsg))
+			acm_nl_process_ip_resolve(client, acmnlmsg);
+		else
+			acm_nl_process_invalid_request(client, acmnlmsg);
+		break;
+
 	default:
 		/* Not supported*/
 		acm_log_once(0, "WARN - invalid opcode %x\n", op);
@@ -2605,6 +2801,7 @@ static void acm_event_handler(struct acmc_device *dev)
 			acm_port_down(&dev->port[i]);
 		break;
 	case IBV_EVENT_CLIENT_REREGISTER:
+		acm_port_change(&dev->port[i]);
 		if ((dev->port[i].state == IBV_PORT_ACTIVE) &&
 		    dev->port[i].prov_port_context) {
 			dev->port[i].prov->handle_event(dev->port[i].prov_port_context,

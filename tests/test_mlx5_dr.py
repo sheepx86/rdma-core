@@ -151,6 +151,17 @@ class Mlx5DrTest(Mlx5RDMATestCase):
         if self.client:
             self.client.ctx.close()
 
+    def create_players(self, resource, **resource_arg):
+        """
+        Init Dr test resources.
+        :param resource: The RDMA resources to use.
+        :param resource_arg: Dict of args that specify the resource specific
+                             attributes.
+        :return: None
+        """
+        self.client = resource(**self.dev_info, **resource_arg)
+        self.server = resource(**self.dev_info, **resource_arg)
+
     @skip_unsupported
     def create_rx_recv_rules_based_on_match_params(self, mask_param, val_param, actions,
                                                    match_criteria=u.MatchCriteriaEnable.OUTER,
@@ -380,9 +391,11 @@ class Mlx5DrTest(Mlx5RDMATestCase):
         roce_mask = FlowTableEntryMatchParam()
         roce_mask.misc_parameters.bth_opcode = 0xff
         roce_mask.misc_parameters.bth_dst_qp = 0xffffff
+        roce_mask.misc_parameters.bth_a = 0x1
         roce_value = FlowTableEntryMatchParam()
         roce_value.misc_parameters.bth_opcode = PacketConsts.BTH_OPCODE
         roce_value.misc_parameters.bth_dst_qp = PacketConsts.BTH_DST_QP
+        roce_value.misc_parameters.bth_a = PacketConsts.BTH_A
         mask_param = Mlx5FlowMatchParameters(len(roce_mask), roce_mask)
         value_param = Mlx5FlowMatchParameters(len(roce_value), roce_value)
         return mask_param, value_param
@@ -975,6 +988,7 @@ class Mlx5DrTest(Mlx5RDMATestCase):
         """
         self.roce_bth_match(domain_flag=dve.MLX5DV_DR_DOMAIN_TYPE_NIC_TX)
 
+    @requires_reformat_support
     @skip_unsupported
     def test_packet_reformat_l2_gre(self):
         """
@@ -997,6 +1011,7 @@ class Mlx5DrTest(Mlx5RDMATestCase):
         encap_header = self.gen_gre_tunnel_encap_header(self.client.msg_size, is_l2_tunnel=True)
         self.packet_reformat_actions(outer=encap_header, root_only=True)
 
+    @requires_reformat_support
     @skip_unsupported
     def test_packet_reformat_l3_gre(self):
         """
@@ -1019,6 +1034,7 @@ class Mlx5DrTest(Mlx5RDMATestCase):
         encap_header = self.gen_gre_tunnel_encap_header(self.client.msg_size, is_l2_tunnel=False)
         self.packet_reformat_actions(outer=encap_header, root_only=True, l2_ref_type=False)
 
+    @requires_reformat_support
     @skip_unsupported
     def test_packet_reformat_l2_geneve(self):
         """
@@ -1041,6 +1057,7 @@ class Mlx5DrTest(Mlx5RDMATestCase):
         encap_header = self.gen_geneve_tunnel_encap_header(self.client.msg_size, is_l2_tunnel=True)
         self.packet_reformat_actions(outer=encap_header, root_only=True)
 
+    @requires_reformat_support
     @skip_unsupported
     def test_packet_reformat_l3_geneve(self):
         """

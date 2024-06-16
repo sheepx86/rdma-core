@@ -3588,9 +3588,9 @@ struct ibv_srq *mlx5_create_srq_ex(struct ibv_context *context,
 	 */
 	max_sge = ctx->max_recv_wr / sizeof(struct mlx5_wqe_data_seg);
 	if (attr->attr.max_sge > max_sge) {
-		mlx5_err(ctx->dbg_fp, "%s-%d:attr.max_sge %d, max_sge %d\n",
-			 __func__, __LINE__, attr->attr.max_sge,
-			 max_sge);
+		mlx5_err(ctx->dbg_fp, "%s-%d:max_wr %d, max_srq_recv_wr %d\n",
+			 __func__, __LINE__, attr->attr.max_wr,
+			 ctx->max_srq_recv_wr);
 		errno = EINVAL;
 		goto err;
 	}
@@ -3849,14 +3849,6 @@ static void get_hca_general_caps(struct mlx5_context *mctx)
 	mctx->general_obj_types_caps =
 		DEVX_GET64(query_hca_cap_out, out,
 			   capability.cmd_hca_cap.general_obj_types);
-
-	mctx->max_dc_rd_atom =
-		1 << DEVX_GET(query_hca_cap_out, out,
-				capability.cmd_hca_cap.log_max_ra_req_dc);
-
-	mctx->max_dc_init_rd_atom =
-		1 << DEVX_GET(query_hca_cap_out, out,
-				capability.cmd_hca_cap.log_max_ra_res_dc);
 
 	get_hca_sig_caps(out, mctx);
 
@@ -5006,6 +4998,7 @@ _mlx5dv_alloc_dm(struct ibv_context *context,
 	int err;
 
 	if ((mlx5_dm_attr->type != MLX5DV_DM_TYPE_MEMIC) &&
+	    (mlx5_dm_attr->type != MLX5DV_DM_TYPE_ENCAP_SW_ICM) &&
 	    (mlx5_dm_attr->type != MLX5DV_DM_TYPE_STEERING_SW_ICM) &&
 	    (mlx5_dm_attr->type != MLX5DV_DM_TYPE_HEADER_MODIFY_SW_ICM) &&
 	    (mlx5_dm_attr->type != MLX5DV_DM_TYPE_HEADER_MODIFY_PATTERN_SW_ICM)) {
@@ -5301,6 +5294,58 @@ int mlx5dv_destroy_flow_matcher(struct mlx5dv_flow_matcher *flow_matcher)
 		return EOPNOTSUPP;
 
 	return dvops->destroy_flow_matcher(flow_matcher);
+}
+
+static int _mlx5dv_query_devx_port(struct ibv_context *ctx,
+			   uint32_t port_num,
+			   struct mlx5dv_devx_port *mlx5_devx_port)
+{
+	DECLARE_COMMAND_BUFFER(cmd,
+			MLX5_IB_OBJECT_DEVX,
+			MLX5_IB_METHOD_DEVX_QUERY_PORT,
+			8);
+
+	if (!mlx5dv_is_supported(ctx->device)) {
+		errno = EOPNOTSUPP;
+		return EOPNOTSUPP;
+	}
+
+	fill_attr_in_uint32(cmd, MLX5_IB_ATTR_DEVX_QUERY_PORT_NUM, port_num);
+	fill_attr_out(cmd, MLX5_IB_ATTR_DEVX_QUERY_PORT_COMP_MASK,
+		      &mlx5_devx_port->comp_mask,
+		      sizeof(mlx5_devx_port->comp_mask));
+
+	if (mlx5_devx_port->comp_mask & MLX5DV_DEVX_PORT_VPORT)
+		fill_attr_out(cmd, MLX5_IB_ATTR_DEVX_QUERY_PORT_VPORT,
+			      &mlx5_devx_port->vport_num,
+			      sizeof(mlx5_devx_port->vport_num));
+
+	if (mlx5_devx_port->comp_mask & MLX5DV_DEVX_PORT_VPORT_VHCA_ID)
+		fill_attr_out(cmd, MLX5_IB_ATTR_DEVX_QUERY_PORT_VPORT_VHCA_ID,
+			      &mlx5_devx_port->vport_vhca_id,
+			      sizeof(mlx5_devx_port->vport_vhca_id));
+
+	if (mlx5_devx_port->comp_mask & MLX5DV_DEVX_PORT_ESW_OWNER_VHCA_ID)
+		fill_attr_out(cmd, MLX5_IB_ATTR_DEVX_QUERY_PORT_ESW_OWNER_VHCA_ID,
+			      &mlx5_devx_port->esw_owner_vhca_id,
+			      sizeof(mlx5_devx_port->esw_owner_vhca_id));
+
+	if (mlx5_devx_port->comp_mask & MLX5DV_DEVX_PORT_VPORT_ICM_RX)
+		fill_attr_out(cmd, MLX5_IB_ATTR_DEVX_QUERY_PORT_VPORT_ICM_RX,
+			      &mlx5_devx_port->icm_addr_rx,
+			      sizeof(mlx5_devx_port->icm_addr_rx));
+
+	if (mlx5_devx_port->comp_mask & MLX5DV_DEVX_PORT_VPORT_ICM_TX)
+		fill_attr_out(cmd, MLX5_IB_ATTR_DEVX_QUERY_PORT_VPORT_ICM_TX,
+			      &mlx5_devx_port->icm_addr_tx,
+			      sizeof(mlx5_devx_port->icm_addr_tx));
+
+	if (mlx5_devx_port->comp_mask & MLX5DV_DEVX_PORT_MATCH_REG_C_0)
+		fill_attr_out(cmd, MLX5_IB_ATTR_DEVX_QUERY_PORT_MATCH_REG_C_0,
+			      &mlx5_devx_port->reg_c_0,
+			      sizeof(mlx5_devx_port->reg_c_0));
+
+	return execute_ioctl(ctx, cmd);
 }
 
 #define CREATE_FLOW_MAX_FLOW_ACTIONS_SUPPORTED 8
@@ -5925,6 +5970,9 @@ static int __mlx5dv_query_port(struct ibv_context *context,
 			       uint32_t port_num,
 			       struct mlx5dv_port *info, size_t info_len)
 {
+	struct mlx5dv_devx_port devx_port = {};
+	int err;
+
 	DECLARE_COMMAND_BUFFER(cmd,
 			       UVERBS_OBJECT_DEVICE,
 			       MLX5_IB_METHOD_QUERY_PORT,
@@ -5933,7 +5981,61 @@ static int __mlx5dv_query_port(struct ibv_context *context,
 	fill_attr_in_uint32(cmd, MLX5_IB_ATTR_QUERY_PORT_PORT_NUM, port_num);
 	fill_attr_out(cmd, MLX5_IB_ATTR_QUERY_PORT, info, info_len);
 
-	return execute_ioctl(context, cmd);
+	err = execute_ioctl(context, cmd);
+	if (!err)
+		return err;
+
+	devx_port.comp_mask = MLX5DV_DEVX_PORT_VPORT |
+		MLX5DV_DEVX_PORT_ESW_OWNER_VHCA_ID |
+		MLX5DV_DEVX_PORT_VPORT_VHCA_ID |
+		MLX5DV_DEVX_PORT_VPORT_ICM_RX |
+		MLX5DV_DEVX_PORT_VPORT_ICM_TX |
+		MLX5DV_DEVX_PORT_MATCH_REG_C_0;
+
+	err = _mlx5dv_query_devx_port(context, port_num, &devx_port);
+	if (err)
+		return err;
+
+	memset(info, 0, info_len);
+
+	if (devx_port.comp_mask & MLX5DV_DEVX_PORT_VPORT &&
+	    info_len >= offsetofend(struct mlx5dv_port, vport)) {
+		info->flags |= MLX5DV_QUERY_PORT_VPORT;
+		info->vport = devx_port.vport_num;
+	}
+
+	if (devx_port.comp_mask & MLX5DV_DEVX_PORT_VPORT_VHCA_ID &&
+	    info_len >= offsetofend(struct mlx5dv_port, vport_vhca_id)) {
+		info->flags |= MLX5DV_QUERY_PORT_VPORT_VHCA_ID;
+		info->vport_vhca_id = devx_port.vport_vhca_id;
+	}
+
+	if (devx_port.comp_mask & MLX5DV_DEVX_PORT_VPORT_ICM_RX &&
+	    info_len >= offsetofend(struct mlx5dv_port, vport_steering_icm_rx)) {
+		info->flags |= MLX5DV_QUERY_PORT_VPORT_STEERING_ICM_RX;
+		info->vport_steering_icm_rx = devx_port.icm_addr_rx;
+	}
+
+	if (devx_port.comp_mask & MLX5DV_DEVX_PORT_VPORT_ICM_TX &&
+	    info_len >= offsetofend(struct mlx5dv_port, vport_steering_icm_tx)) {
+		info->flags |= MLX5DV_QUERY_PORT_VPORT_STEERING_ICM_TX;
+		info->vport_steering_icm_tx = devx_port.icm_addr_tx;
+	}
+
+	if (devx_port.comp_mask & MLX5DV_DEVX_PORT_ESW_OWNER_VHCA_ID &&
+	    info_len >= offsetofend(struct mlx5dv_port, esw_owner_vhca_id)) {
+		info->flags |= MLX5DV_QUERY_PORT_ESW_OWNER_VHCA_ID;
+		info->esw_owner_vhca_id = devx_port.esw_owner_vhca_id;
+	}
+
+	if (devx_port.comp_mask & MLX5DV_DEVX_PORT_MATCH_REG_C_0 &&
+	    info_len >= offsetofend(struct mlx5dv_port, reg_c0)) {
+		info->flags |= MLX5DV_QUERY_PORT_VPORT_REG_C0;
+		info->reg_c0 = devx_port.reg_c_0;
+	}
+
+	return err;
+
 }
 
 int _mlx5dv_query_port(struct ibv_context *context,

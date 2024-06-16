@@ -8,7 +8,6 @@ rdma_python_test(tests
   base_rdmacm.py
   cuda_utils.py
   efa_base.py
-  irdma_base.py
   mlx5_base.py
   mlx5_prm_structs.py
   rdmacm_utils.py
@@ -20,7 +19,6 @@ rdma_python_test(tests
   test_cuda_dmabuf.py
   test_device.py
   test_efa_srd.py
-  test_efadv.py
   test_flow.py
   test_fork.py
   test_mlx5_cq.py

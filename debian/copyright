@@ -69,10 +69,6 @@ Files: ibacm/CMakeLists.txt
 Copyright: disclaimed
 License: BSD-MIT or GPL-2
 
-Files: iwpmd/*
-Copyright: 2013-2016, Intel Corporation.
-License: BSD-MIT or GPL-2
-
 Files: kernel-headers/*
 Copyright: disclaimed
 License: GPL-2 or BSD-2-clause
@@ -144,36 +140,8 @@ Files: librdmacm/man/*
 Copyright: disclaimed
 License: BSD-2-clause
 
-Files: providers/bnxt_re/*
-Copyright: 2015-2017, Broadcom Limited and/or its subsidiaries
-License: BSD-2-clause or GPL-2
-
-Files: providers/cxgb4/*
-Copyright: 2003-2016, Chelsio Communications, Inc.
-License: BSD-MIT or GPL-2
-
-Files: providers/efa/*
-Copyright: 2019 Amazon.com, Inc. or its affiliates.
-License: BSD-2-clause or GPL-2
-
 Files: providers/erdma/*
 Copyright: 2020-2021, Alibaba Group
-License: BSD-MIT or GPL-2
-
-Files: providers/hfi1verbs/*
-Copyright: 2005 PathScale, Inc.
-           2006-2009 QLogic Corporation
-           2015 Intel Corporation
-License: BSD-3-clause or GPL-2
-
-Files: providers/hns/*
-Copyright: 2016, Hisilicon Limited.
-License: BSD-MIT or GPL-2
-
-Files: providers/ipathverbs/*
-Copyright: 2006-2010, QLogic Corp.
-           2005, PathScale, Inc.
-           2013, Intel Corporation
 License: BSD-MIT or GPL-2
 
 Files: providers/irdma/*
@@ -184,12 +152,6 @@ Files: providers/mana/*
 Copyright: 2022, Microsoft Corporation.
 License: BSD-MIT or GPL-2
 
-Files: providers/mlx4/*
-Copyright: 2004-2005, Topspin Communications.
-           2005-2007, Cisco, Inc.
-           2005-2017, Mellanox Technologies Ltd.
-License: BSD-MIT or GPL-2
-
 Files: providers/mlx5/*
 Copyright: 2010-2017, Mellanox Technologies, Inc.
 License: BSD-MIT or GPL-2
@@ -198,35 +160,6 @@ Files: providers/mlx5/man/*.3
        providers/mlx5/man/*.7
 Copyright: disclaimed
 License: BSD-MIT
-
-Files: providers/mthca/*
-Copyright: 2004-2005, Topspin Communications.
-           2005-2006, Cisco Systems.
-           2005, Mellanox Technologies Ltd.
-License: BSD-MIT or GPL-2
-
-Files: providers/ocrdma/*
-Copyright: 2008-2013, Emulex.
-License: BSD-2-clause or GPL-2
-
-Files: providers/qedr/*
-Copyright: 2015-2016, QLogic Corporation.
-License: BSD-MIT or GPL-2
-
-Files: providers/rxe/*
-Copyright: 2009-2011, System Fabric Works, Inc.
-           2009-2011, Mellanox Technologies Ltd.
-           2006-2007, QLogic Corporation.
-           2005, PathScale, Inc.
-License: BSD-MIT or GPL-2
-
-Files: providers/siw/*
-Copyright: 2008-2019, IBM Corporation.
-License: BSD-3-clause or GPL-2
-
-Files: providers/vmw_pvrdma/*
-Copyright: 2012-2016 VMware, Inc.
-License: BSD-2-clause or GPL-2
 
 Files: rdma-ndd/*
 Copyright: 2004-2016, Intel Corporation.

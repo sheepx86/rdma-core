@@ -59,11 +59,26 @@ struct mlx5_ib_uapi_devx_async_cmd_hdr {
 	__u8		out_data[];
 };
 
+enum mlx5_ib_uapi_devx_query_port_comp_mask {
+	MLX5_IB_UAPI_QUERY_PORT_VPORT_OLD		= 1 << 0,
+	MLX5_IB_UAPI_QUERY_PORT_VPORT_VHCA_ID_OLD	= 1 << 1,
+	MLX5_IB_UAPI_QUERY_PORT_ESW_OWNER_VHCA_ID_OLD	= 1 << 2,
+	MLX5_IB_UAPI_QUERY_PORT_VPORT_ICM_RX_OLD	= 1 << 3,
+	MLX5_IB_UAPI_QUERY_PORT_VPORT_ICM_TX_OLD	= 1 << 4,
+	MLX5_IB_UAPI_QUERY_PORT_MATCH_REG_C_0_OLD	= 1 << 5,
+};
+
+struct mlx5_ib_uapi_devx_reg_32 {
+        __u32 value;
+        __u32 mask;
+};
+
 enum mlx5_ib_uapi_dm_type {
 	MLX5_IB_UAPI_DM_TYPE_MEMIC,
 	MLX5_IB_UAPI_DM_TYPE_STEERING_SW_ICM,
 	MLX5_IB_UAPI_DM_TYPE_HEADER_MODIFY_SW_ICM,
 	MLX5_IB_UAPI_DM_TYPE_HEADER_MODIFY_PATTERN_SW_ICM,
+	MLX5_IB_UAPI_DM_TYPE_ENCAP_SW_ICM,
 };
 
 enum mlx5_ib_uapi_devx_create_event_channel_flags {

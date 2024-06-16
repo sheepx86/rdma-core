@@ -27,6 +27,13 @@ rdma_subst_install(FILES "srp_daemon.sh.in"
   RENAME "srp_daemon.sh"
   PERMISSIONS OWNER_WRITE OWNER_READ GROUP_READ WORLD_READ OWNER_EXECUTE GROUP_EXECUTE WORLD_EXECUTE)
 
+if(ENABLE_SRP_COMPAT)
+  # Comment out disabled parameters
+  set(SRP_DISABLE_PARAM "# ")
+else()
+  set(SRP_DISABLE_PARAM "")
+endif()
+
 rdma_subst_install(FILES start_on_all_ports.in
   DESTINATION "${CMAKE_INSTALL_LIBEXECDIR}/srp_daemon"
   RENAME start_on_all_ports

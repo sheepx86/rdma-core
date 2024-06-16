@@ -542,15 +542,11 @@ static Node *find_mcpath(ib_portid_t * from, int mlid)
 
 	DEBUG("from %s", portid2str(from));
 
-	node = calloc(1, sizeof(Node));
-	if (!node)
+	if (!(node = calloc(1, sizeof(Node))))
 		IBEXIT("out of memory");
 
-	port = calloc(1, sizeof(Port));
-	if (!port) {
-		free(node);
+	if (!(port = calloc(1, sizeof(Port))))
 		IBEXIT("out of memory");
-	}
 
 	if (get_node(node, port, from) < 0) {
 		IBWARN("can't reach node %s", portid2str(from));
@@ -568,11 +564,8 @@ static Node *find_mcpath(ib_portid_t * from, int mlid)
 			return NULL;	/* ibtracert from host to itself is unsupported */
 		}
 
-		if (switch_mclookup(node, from, mlid, map) < 0 || !map[0]) {
-			free(node);
-			free(port);
+		if (switch_mclookup(node, from, mlid, map) < 0 || !map[0])
 			return NULL;
-		}
 		return node;
 	}
 
@@ -619,8 +612,7 @@ static Node *find_mcpath(ib_portid_t * from, int mlid)
 					if (from->drpath.cnt > 0)
 						path->drpath.cnt--;
 				} else {
-					port = calloc(1, sizeof(Port));
-					if (!port)
+					if (!(port = calloc(1, sizeof(Port))))
 						IBEXIT("out of memory");
 
 					if (get_port(port, i, path) < 0) {
@@ -645,18 +637,11 @@ static Node *find_mcpath(ib_portid_t * from, int mlid)
 					}
 				}
 
-				remotenode = calloc(1, sizeof(Node));
-				if (!remotenode) {
-					free(port);
+				if (!(remotenode = calloc(1, sizeof(Node))))
 					IBEXIT("out of memory");
-				}
 
-				remoteport = calloc(1, sizeof(Port));
-				if (!remoteport) {
-					free(port);
-					free(remotenode);
+				if (!(remoteport = calloc(1, sizeof(Port))))
 					IBEXIT("out of memory");
-				}
 
 				if (get_node(remotenode, remoteport, path) < 0) {
 					IBWARN
@@ -685,9 +670,6 @@ static Node *find_mcpath(ib_portid_t * from, int mlid)
 						     remotenode, remoteport);
 
 				path->drpath.cnt--;	/* restore path */
-				free(port);
-				free(remotenode);
-				free(remoteport);
 			}
 		}
 	}

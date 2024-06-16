@@ -10,7 +10,7 @@ from args_parser import parser
 def _load_tests():
     res = []
     for fn in sorted(os.listdir(os.path.dirname(__file__))):
-        if fn.endswith(".py") and fn.startswith("test_"):
+        if fn.endswith(".py") and fn.startswith("test_") and not fn.startswith("test_efa"):
             m  = importlib.import_module("." + os.path.basename(fn)[:-3], __name__)
             res.append(m)
     return res

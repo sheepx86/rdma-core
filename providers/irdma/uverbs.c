@@ -353,7 +353,7 @@ static struct ibv_cq_ex *ucreate_cq(struct ibv_context *context,
 		return NULL;
 	}
 
-	if (attr_ex->cqe < IRDMA_MIN_CQ_SIZE || attr_ex->cqe > uk_attrs->max_hw_cq_size - 1) {
+	if (attr_ex->cqe < IRDMA_MIN_CQ_SIZE || attr_ex->cqe > uk_attrs->max_hw_cq_size) {
 		errno = EINVAL;
 		return NULL;
 	}
@@ -432,7 +432,6 @@ static struct ibv_cq_ex *ucreate_cq(struct ibv_context *context,
 	ret = ibv_cmd_create_cq_ex(context, attr_ex, &iwucq->verbs_cq,
 				   &cmd.ibv_cmd, sizeof(cmd), &resp.ibv_resp,
 				   sizeof(resp), 0);
-	attr_ex->cqe = ncqe;
 	if (ret) {
 		errno = ret;
 		goto err_dereg_shadow;
@@ -1329,8 +1328,6 @@ struct ibv_qp *irdma_ucreate_qp(struct ibv_pd *pd,
 
 	if (attr->cap.max_send_sge > uk_attrs->max_hw_wq_frags ||
 	    attr->cap.max_recv_sge > uk_attrs->max_hw_wq_frags ||
-	    attr->cap.max_send_wr > uk_attrs->max_hw_wq_quanta ||
-	    attr->cap.max_recv_wr > uk_attrs->max_hw_rq_quanta ||
 	    attr->cap.max_inline_data > uk_attrs->max_hw_inline) {
 		errno = EINVAL;
 		return NULL;

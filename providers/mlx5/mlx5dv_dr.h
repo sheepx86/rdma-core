@@ -64,6 +64,15 @@
 #define dr_dbg_ctx(ctx, arg...)					\
 	mlx5_dbg(to_mctx(ctx)->dbg_fp, MLX5_DBG_DR, ##arg);
 
+#define dr_print_once(fmt, ...) \
+	do { \
+		static bool flag; \
+		if (!flag) { \
+			flag = true; \
+			printf(fmt, ##__VA_ARGS__); \
+		} \
+	} while (0)
+
 enum dr_icm_chunk_size {
 	DR_CHUNK_SIZE_1,
 	DR_CHUNK_SIZE_MIN = DR_CHUNK_SIZE_1, /* keep updated when changing */
@@ -88,6 +97,9 @@ enum dr_icm_chunk_size {
 	DR_CHUNK_SIZE_512K,
 	DR_CHUNK_SIZE_1024K,
 	DR_CHUNK_SIZE_2048K,
+	DR_CHUNK_SIZE_4096K,
+	DR_CHUNK_SIZE_8192K,
+	DR_CHUNK_SIZE_16384K,
 	DR_CHUNK_SIZE_MAX,
 };
 
@@ -95,6 +107,7 @@ enum dr_icm_type {
 	DR_ICM_TYPE_STE,
 	DR_ICM_TYPE_MODIFY_ACTION,
 	DR_ICM_TYPE_MODIFY_HDR_PTRN,
+	DR_ICM_TYPE_ENCAP,
 	DR_ICM_TYPE_MAX,
 };
 
@@ -134,6 +147,11 @@ enum dr_ste_ctx_action_cap {
 enum {
 	DR_MODIFY_ACTION_SIZE	= 8,
 	DR_MODIFY_ACTION_LOG_SIZE	= 3,
+};
+
+enum {
+	DR_SW_ENCAP_ENTRY_SIZE		= 64,
+	DR_SW_ENCAP_ENTRY_LOG_SIZE	= 6,
 };
 
 enum dr_matcher_criteria {
@@ -677,12 +695,15 @@ int dr_actions_build_ste_arr(struct mlx5dv_dr_matcher *matcher,
 			     uint32_t num_actions,
 			     uint8_t *ste_arr,
 			     uint32_t *new_hw_ste_arr_sz,
-			     struct cross_dmn_params *cross_dmn_p);
+			     struct cross_dmn_params *cross_dmn_p,
+			     uint8_t send_ring_idx);
 int dr_actions_build_attr(struct mlx5dv_dr_matcher *matcher,
 			  struct mlx5dv_dr_action *actions[],
 			  size_t num_actions,
 			  struct mlx5dv_flow_action_attr *attr,
 			  struct mlx5_flow_action_attr_aux *attr_aux);
+
+uint32_t dr_actions_reformat_get_id(struct mlx5dv_dr_action *action);
 
 struct dr_match_spec {
 	uint32_t smac_47_16;	/* Source MAC address of incoming packet */
@@ -724,7 +745,7 @@ struct dr_match_spec {
 
 struct dr_match_misc {
 	uint32_t gre_c_present:1;		/* used with GRE, checksum exist when gre_c_present == 1 */
-	uint32_t reserved_at1:1;
+	uint32_t bth_a:1;
 	uint32_t gre_k_present:1;		/* used with GRE, key exist when gre_k_present == 1 */
 	uint32_t gre_s_present:1;		/* used with GRE, sequence number exist when gre_s_present == 1 */
 	uint32_t source_vhca_port:4;
@@ -763,7 +784,9 @@ struct dr_match_misc {
 	uint32_t bth_dst_qp:24;			/* Destination QP in BTH header */
 	uint32_t inner_esp_spi;
 	uint32_t outer_esp_spi;
-	uint32_t reserved_at_1a0[3];
+	uint32_t reserved_at_1a0;
+	uint32_t reserved_at_1c0;
+	uint32_t reserved_at_1e0;
 };
 
 struct dr_match_misc2 {
@@ -796,7 +819,8 @@ struct dr_match_misc2 {
 	uint32_t reserved_at_1a8:8;
 	uint32_t ipsec_syndrome:8;
 	uint32_t ipsec_next_header:8;
-	uint32_t reserved_at_260[2];
+	uint32_t reserved_at_260;
+	uint32_t reserved_at_280;
 };
 
 struct dr_match_misc3 {
@@ -931,6 +955,9 @@ struct dr_devx_caps {
 	uint64_t			hdr_modify_icm_addr;
 	uint32_t			log_modify_pattern_icm_size;
 	uint64_t			hdr_modify_pattern_icm_addr;
+	uint64_t			indirect_encap_icm_base;
+	uint32_t			log_sw_encap_icm_size;
+	uint64_t			sw_encap_icm_addr;
 	uint32_t			flex_protocols;
 	uint8_t				flex_parser_header_modify;
 	uint8_t				flex_parser_id_icmp_dw0;
@@ -963,8 +990,10 @@ struct dr_devx_caps {
 	bool				support_modify_argument;
 	bool				prio_tag_required;
 	bool				is_ecpf;
+	bool				merged_eswitch;
 	struct dr_devx_vports		vports;
 	bool				support_full_tnl_hdr;
+	uint16_t			max_encap_size;
 };
 
 struct dr_devx_flow_table_attr {
@@ -982,16 +1011,24 @@ struct dr_devx_flow_group_attr {
 	uint32_t	table_type;
 };
 
+enum {
+	MLX5_FLOW_DEST_VPORT_VHCA_ID      = BIT(0),
+	MLX5_FLOW_DEST_VPORT_REFORMAT_ID  = BIT(1),
+};
+
 struct dr_devx_flow_dest_info {
 	enum dr_devx_flow_dest_type type;
 	union {
-		uint32_t vport_num;
 		uint32_t tir_num;
 		uint32_t counter_id;
 		uint32_t ft_id;
+		struct {
+			uint16_t vport_num;
+			uint16_t vhca_id;
+		};
 	};
-	bool has_reformat;
 	uint32_t reformat_id;
+	uint8_t flags;
 };
 
 struct dr_devx_flow_fte_attr {
@@ -1040,6 +1077,7 @@ struct dr_domain_info {
 	uint32_t		max_log_sw_icm_sz;
 	uint32_t		max_log_action_icm_sz;
 	uint32_t		max_log_modify_hdr_pattern_icm_sz;
+	uint32_t		max_log_sw_encap_icm_sz;
 	uint32_t		max_send_size;
 	struct dr_domain_rx_tx	rx;
 	struct dr_domain_rx_tx	tx;
@@ -1065,6 +1103,7 @@ struct mlx5dv_dr_domain {
 	struct dr_icm_pool		*action_icm_pool;
 	struct dr_ptrn_mngr		*modify_header_ptrn_mngr;
 	struct dr_arg_mngr		*modify_header_arg_mngr;
+	struct dr_icm_pool		*encap_icm_pool;
 	struct dr_send_ring		*send_ring[DR_MAX_SEND_RINGS];
 	struct dr_domain_info		info;
 	struct list_head		tbl_list;
@@ -1219,7 +1258,6 @@ struct dr_ptrn_obj {
 	struct dr_rewrite_param rewrite_param;
 	atomic_int refcount;
 	struct list_node list;
-	enum dr_ptrn_type type;
 };
 
 struct dr_arg_obj {
@@ -1236,6 +1274,7 @@ struct mlx5dv_dr_action {
 		struct {
 			struct mlx5dv_dr_domain	*dmn;
 			bool			is_root_level;
+			uint32_t                args_send_qp;
 			union {
 				struct ibv_flow_action	*flow_action; /* root*/
 				struct {
@@ -1257,6 +1296,9 @@ struct mlx5dv_dr_action {
 				struct ibv_flow_action	*flow_action; /* root*/
 				struct {
 					struct mlx5dv_devx_obj	*dvo;
+					uint8_t			*data;
+					uint32_t		index;
+					struct dr_icm_chunk	*chunk;
 					uint32_t		reformat_size;
 				};
 			};
@@ -1413,6 +1455,8 @@ dr_icm_pool_dm_type_to_entry_size(enum dr_icm_type icm_type)
 {
 	if (icm_type == DR_ICM_TYPE_STE)
 		return DR_STE_SIZE;
+	else if (icm_type == DR_ICM_TYPE_ENCAP)
+		return DR_SW_ENCAP_ENTRY_SIZE;
 
 	return DR_MODIFY_ACTION_SIZE;
 }
@@ -1694,7 +1738,8 @@ int dr_send_postsend_pattern(struct mlx5dv_dr_domain *dmn,
 			     uint16_t num_of_actions,
 			     uint8_t *data);
 int dr_send_postsend_args(struct mlx5dv_dr_domain *dmn, uint64_t arg_id,
-			  uint16_t num_of_actions, uint8_t *actions_data);
+			  uint16_t num_of_actions, uint8_t *actions_data,
+			  uint32_t ring_index);
 
 /* buddy functions & structure */
 struct dr_icm_mr;
@@ -1747,6 +1792,7 @@ struct dr_arg_obj *dr_arg_get_obj(struct dr_arg_mngr *mngr,
 				  uint8_t *data);
 void dr_arg_put_obj(struct dr_arg_mngr *mngr, struct dr_arg_obj *arg_obj);
 uint32_t dr_arg_get_object_id(struct dr_arg_obj *arg_obj);
+bool dr_domain_is_support_sw_encap(struct mlx5dv_dr_domain *dmn);
 
 int dr_buddy_init(struct dr_icm_buddy_mem *buddy, uint32_t max_order);
 void dr_buddy_cleanup(struct dr_icm_buddy_mem *buddy);
@@ -1755,6 +1801,8 @@ void dr_buddy_free_mem(struct dr_icm_buddy_mem *buddy, uint32_t seg, int order);
 
 void dr_ste_free_modify_hdr(struct mlx5dv_dr_action *action);
 int dr_ste_alloc_modify_hdr(struct mlx5dv_dr_action *action);
+int dr_ste_alloc_encap(struct mlx5dv_dr_action *action);
+void dr_ste_free_encap(struct mlx5dv_dr_action *action);
 
 void dr_vports_table_add_wire(struct dr_devx_vports *vports);
 void dr_vports_table_del_wire(struct dr_devx_vports *vports);

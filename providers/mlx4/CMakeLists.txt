@@ -13,6 +13,8 @@ publish_headers(infiniband
   mlx4dv.h
 )
 
+if (0)
 install(FILES "mlx4.conf" DESTINATION "${CMAKE_INSTALL_MODPROBEDIR}/")
+endif()
 
 rdma_pkg_config("mlx4" "libibverbs" "${CMAKE_THREAD_LIBS_INIT}")

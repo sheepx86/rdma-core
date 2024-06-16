@@ -43,6 +43,7 @@ extern "C" {
 #define ACM_OP_RESOLVE          0x01
 #define ACM_OP_PERF_QUERY       0x02
 #define ACM_OP_EP_QUERY         0x03
+#define ACM_OP_IP_RESOLVE       0x04
 #define ACM_OP_ACK              0x80
 
 #define ACM_STATUS_SUCCESS      0
@@ -85,6 +86,7 @@ struct acm_hdr {
 #define ACM_EP_INFO_NAME        0x0001
 #define ACM_EP_INFO_ADDRESS_IP  0x0002
 #define ACM_EP_INFO_ADDRESS_IP6 0x0003
+#define ACM_EP_INFO_DGIG	0x0004
 #define ACM_EP_INFO_PATH        0x0010
 
 union acm_ep_info {

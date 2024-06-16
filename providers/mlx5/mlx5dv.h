@@ -86,7 +86,6 @@ enum mlx5dv_context_comp_mask {
 	MLX5DV_CONTEXT_MASK_DCI_STREAMS		= 1 << 11,
 	MLX5DV_CONTEXT_MASK_WR_MEMCPY_LENGTH	= 1 << 12,
 	MLX5DV_CONTEXT_MASK_CRYPTO_OFFLOAD	= 1 << 13,
-	MLX5DV_CONTEXT_MASK_MAX_DC_RD_ATOM	= 1 << 14,
 };
 
 struct mlx5dv_cqe_comp_caps {
@@ -212,6 +211,16 @@ struct mlx5dv_crypto_caps {
 	uint32_t flags; /* use enum mlx5dv_crypto_caps_flags */
 };
 
+struct mlx5dv_devx_port {
+	uint64_t comp_mask;
+	uint16_t vport_num;
+	uint16_t vport_vhca_id;
+	uint16_t esw_owner_vhca_id;
+	uint64_t icm_addr_rx;
+	uint64_t icm_addr_tx;
+	struct mlx5dv_reg reg_c_0;
+};
+
 /*
  * Direct verbs device-specific attributes
  */
@@ -233,8 +242,6 @@ struct mlx5dv_context {
 	struct mlx5dv_dci_streams_caps dci_streams_caps;
 	size_t max_wr_memcpy_length;
 	struct mlx5dv_crypto_caps crypto_caps;
-	uint64_t max_dc_rd_atom;
-	uint64_t max_dc_init_rd_atom;
 };
 
 enum mlx5dv_context_flags {

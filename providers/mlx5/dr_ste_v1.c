@@ -197,6 +197,9 @@ static const struct dr_ste_action_modify_field dr_ste_v1_action_modify_field_arr
 	[MLX5_ACTION_IN_FIELD_OUT_IP_ECN] = {
 		.hw_field = DR_STE_V1_ACTION_MDFY_FLD_L3_OUT_0, .start = 16, .end = 17,
 	},
+	[MLX5_ACTION_IN_FIELD_OUT_IPV6_TRAFFIC_CLASS] = {
+		.hw_field = DR_STE_V1_ACTION_MDFY_FLD_L3_OUT_0, .start = 16, .end = 23,
+	},
 	[MLX5_ACTION_IN_FIELD_OUT_TCP_FLAGS] = {
 		.hw_field = DR_STE_V1_ACTION_MDFY_FLD_L4_OUT_1, .start = 16, .end = 24,
 		.l4_type = DR_STE_ACTION_MDFY_TYPE_L4_TCP,
@@ -2405,6 +2408,7 @@ static int dr_ste_v1_build_ib_l4_tag(struct dr_match_param *value,
 
 	DR_STE_SET_TAG(ib_l4, tag, opcode, misc, bth_opcode);
 	DR_STE_SET_TAG(ib_l4, tag, qp, misc, bth_dst_qp);
+	DR_STE_SET_TAG(ib_l4, tag, ackreq, misc, bth_a);
 
 	return 0;
 }

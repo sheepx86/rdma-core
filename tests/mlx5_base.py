@@ -128,6 +128,11 @@ class Mlx5DcResources(RoCETrafficResources):
             self.qps[i].to_rts(attr)
         self.dct_qp.to_rtr(attr)
 
+    def pre_run(self, rpsns, rqps_num):
+        self.rpsns = rpsns
+        self.rqps_num = rqps_num
+        self.to_rts()
+
     def create_context(self):
         mlx5dv_attr = Mlx5DVContextAttr()
         try:
@@ -138,8 +143,7 @@ class Mlx5DcResources(RoCETrafficResources):
             raise unittest.SkipTest('Opening mlx5 context is not supported')
 
     def create_mr(self):
-        access = e.IBV_ACCESS_REMOTE_WRITE | e.IBV_ACCESS_LOCAL_WRITE | \
-                 e.IBV_ACCESS_REMOTE_ATOMIC | e.IBV_ACCESS_REMOTE_READ
+        access = e.IBV_ACCESS_REMOTE_WRITE | e.IBV_ACCESS_LOCAL_WRITE
         self.mr = MR(self.pd, self.msg_size, access)
 
     def create_qp_cap(self):
@@ -148,8 +152,7 @@ class Mlx5DcResources(RoCETrafficResources):
     def create_qp_attr(self):
         qp_attr = QPAttr(port_num=self.ib_port)
         set_rnr_attributes(qp_attr)
-        qp_access = e.IBV_ACCESS_LOCAL_WRITE | e.IBV_ACCESS_REMOTE_WRITE | \
-                    e.IBV_ACCESS_REMOTE_ATOMIC | e.IBV_ACCESS_REMOTE_READ
+        qp_access = e.IBV_ACCESS_LOCAL_WRITE | e.IBV_ACCESS_REMOTE_WRITE
         qp_attr.qp_access_flags = qp_access
         gr = GlobalRoute(dgid=self.ctx.query_gid(self.ib_port, self.gid_index),
                          sgid_index=self.gid_index)

@@ -23,6 +23,5 @@ ProtectHostname=true
 ProtectKernelLogs=true
 
 [Install]
-Also=ibacm.socket
 # Only want ibacm if RDMA hardware is present (or the socket is touched)
 WantedBy=rdma-hw.target

@@ -243,9 +243,6 @@ int dr_devx_query_device(struct ibv_context *ctx, struct dr_devx_caps *caps)
 	caps->roce_caps.fl_rc_qp_when_roce_disabled = DEVX_GET(query_hca_cap_out, out,
 					capability.cmd_hca_cap.fl_rc_qp_when_roce_disabled);
 
-	caps->roce_caps.qp_ts_format = DEVX_GET(query_hca_cap_out, out,
-						capability.cmd_hca_cap.sq_ts_format);
-
 	if (caps->support_modify_argument) {
 		caps->log_header_modify_argument_granularity =
 			DEVX_GET(query_hca_cap_out, out,
@@ -331,6 +328,8 @@ int dr_devx_query_device(struct ibv_context *ctx, struct dr_devx_caps *caps)
 		return err;
 	}
 
+	caps->max_encap_size = DEVX_GET(query_hca_cap_out, out,
+					capability.flow_table_nic_cap.max_encap_header_size);
 	caps->nic_rx_drop_address = DEVX_GET64(query_hca_cap_out, out,
 					       capability.flow_table_nic_cap.
 					       sw_steering_nic_rx_action_drop_icm_address);
@@ -383,7 +382,7 @@ int dr_devx_query_device(struct ibv_context *ctx, struct dr_devx_caps *caps)
 					       ft_field_bitmask_support_2_nic_receive.
 					       tunnel_header_2_3));
 
-	if (sf_supp && caps->eswitch_manager) {
+	if (caps->eswitch_manager) {
 		DEVX_SET(query_hca_cap_in, in, op_mod,
 			 MLX5_SET_HCA_CAP_OP_MOD_ESW | HCA_CAP_OPMOD_GET_CUR);
 
@@ -393,8 +392,11 @@ int dr_devx_query_device(struct ibv_context *ctx, struct dr_devx_caps *caps)
 			dr_dbg_ctx(ctx, "Query eswitch capabilities failed %d\n", err);
 			return err;
 		}
-		max_sfs = 1 << DEVX_GET(query_hca_cap_out, out,
+		if (sf_supp)
+			max_sfs = 1 << DEVX_GET(query_hca_cap_out, out,
 					capability.e_switch_cap.log_max_esw_sf);
+		caps->merged_eswitch = DEVX_GET(query_hca_cap_out, out,
+					capability.e_switch_cap.merged_eswitch);
 	}
 
 	if (caps->eswitch_manager) {
@@ -439,6 +441,18 @@ int dr_devx_query_device(struct ibv_context *ctx, struct dr_devx_caps *caps)
 	caps->hdr_modify_pattern_icm_addr =
 		DEVX_GET64(query_hca_cap_out, out,
 			   capability.device_mem_cap.header_modify_pattern_sw_icm_start_address);
+
+	caps->log_sw_encap_icm_size =
+		DEVX_GET(query_hca_cap_out, out,
+			 capability.device_mem_cap.log_indirect_encap_sw_icm_size);
+
+	caps->sw_encap_icm_addr =
+		DEVX_GET64(query_hca_cap_out, out,
+			   capability.device_mem_cap.indirect_encap_sw_icm_start_address);
+
+	caps->indirect_encap_icm_base =
+		DEVX_GET64(query_hca_cap_out, out,
+			   capability.device_mem_cap.indirect_encap_icm_base);
 
 	/* RoCE caps */
 	if (roce) {
@@ -548,27 +562,10 @@ int dr_devx_query_flow_table(struct mlx5dv_devx_obj *obj, uint32_t type,
 		return mlx5_get_cmd_status_err(ret, out);
 	}
 
-	switch (type) {
-	case FS_FT_NIC_TX:
-		*tx_icm_addr = DEVX_GET64(query_flow_table_out, out,
-					  flow_table_context.sw_owner_icm_root_0);
-		*rx_icm_addr = 0;
-		break;
-	case FS_FT_NIC_RX:
-		*rx_icm_addr = DEVX_GET64(query_flow_table_out, out,
-					  flow_table_context.sw_owner_icm_root_0);
-		*tx_icm_addr = 0;
-		break;
-	case FS_FT_FDB:
-		*rx_icm_addr = DEVX_GET64(query_flow_table_out, out,
-					  flow_table_context.sw_owner_icm_root_0);
-		*tx_icm_addr = DEVX_GET64(query_flow_table_out, out,
-					  flow_table_context.sw_owner_icm_root_1);
-		break;
-	default:
-		errno = EINVAL;
-		return errno;
-	}
+	*tx_icm_addr = DEVX_GET64(query_flow_table_out, out,
+				  flow_table_context.sw_owner_icm_root_1);
+	*rx_icm_addr = DEVX_GET64(query_flow_table_out, out,
+				  flow_table_context.sw_owner_icm_root_0);
 
 	return 0;
 }
@@ -651,6 +648,12 @@ dr_devx_set_fte(struct ibv_context *ctx,
 			switch (type) {
 			case MLX5_FLOW_DEST_TYPE_VPORT:
 				id = fte_attr->dest_arr[i].vport_num;
+				DEVX_SET(dest_format, in_dests,
+					 destination_eswitch_owner_vhca_id_valid,
+					 !!(fte_attr->dest_arr[i].flags & MLX5_FLOW_DEST_VPORT_VHCA_ID));
+				DEVX_SET(dest_format, in_dests,
+					 destination_eswitch_owner_vhca_id,
+					 fte_attr->dest_arr[i].vhca_id);
 				break;
 			case MLX5_FLOW_DEST_TYPE_TIR:
 				id = fte_attr->dest_arr[i].tir_num;
@@ -665,7 +668,7 @@ dr_devx_set_fte(struct ibv_context *ctx,
 
 			DEVX_SET(dest_format, in_dests, destination_type, type);
 			DEVX_SET(dest_format, in_dests, destination_id, id);
-			if (fte_attr->dest_arr[i].has_reformat) {
+			if (fte_attr->dest_arr[i].flags & MLX5_FLOW_DEST_VPORT_REFORMAT_ID) {
 				if (!fte_attr->extended_dest) {
 					errno = EINVAL;
 					goto err_out;

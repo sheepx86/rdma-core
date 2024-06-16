@@ -362,7 +362,8 @@ static int dr_rule_rehash_copy_htbl(struct mlx5dv_dr_matcher *matcher,
 				    struct dr_matcher_rx_tx *nic_matcher,
 				    struct dr_ste_htbl *cur_htbl,
 				    struct dr_ste_htbl *new_htbl,
-				    struct list_head *update_list)
+				    struct list_head *update_list,
+				    uint8_t lock_index)
 {
 	struct dr_ste *cur_ste;
 	int cur_entries;
@@ -383,6 +384,15 @@ static int dr_rule_rehash_copy_htbl(struct mlx5dv_dr_matcher *matcher,
 						    update_list);
 		if (err)
 			goto clean_copy;
+
+		/* In order to decrease memory allocation of ste_info struct send
+		 * the current table raw now.
+		 */
+		err = dr_rule_send_update_list(update_list, matcher->tbl->dmn, false, lock_index);
+		if (err) {
+			dr_dbg(matcher->tbl->dmn, "Failed updating table to HW\n");
+			goto clean_copy;
+		}
 	}
 
 clean_copy:
@@ -442,7 +452,8 @@ static struct dr_ste_htbl *dr_rule_rehash_htbl_common(struct mlx5dv_dr_matcher *
 				       nic_matcher,
 				       cur_htbl,
 				       new_htbl,
-				       &rehash_table_send_list);
+				       &rehash_table_send_list,
+				       lock_index);
 	if (err)
 		goto free_new_htbl;
 
@@ -1375,15 +1386,16 @@ dr_rule_create_rule_nic(struct mlx5dv_dr_rule *rule,
 	if (ret)
 		return ret;
 
+	dr_rule_lock(nic_rule, hw_ste_arr);
+
 	/* Set the actions values/addresses inside the ste array */
 	ret = dr_actions_build_ste_arr(matcher, nic_matcher, actions,
 				       num_actions, hw_ste_arr,
 				       &new_hw_ste_arr_sz,
-				       &cross_dmn_p);
+				       &cross_dmn_p,
+				       nic_rule->lock_index);
 	if (ret)
-		return ret;
-
-	dr_rule_lock(nic_rule, hw_ste_arr);
+		goto out_unlock;
 
 	cur_htbl = nic_matcher->s_htbl;
 

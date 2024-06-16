@@ -59,9 +59,11 @@ function(rdma_rst_man_page SRC MAN_SECT MANFN)
     rdma_man_get_prebuilt(${SRC} OBJ)
   endif()
 
-  install(FILES "${OBJ}"
-    RENAME "${MANFN}"
-    DESTINATION "${CMAKE_INSTALL_MANDIR}/man${MAN_SECT}/")
+  if (RST2MAN_EXECUTABLE)
+    install(FILES "${OBJ}"
+      RENAME "${MANFN}"
+      DESTINATION "${CMAKE_INSTALL_MANDIR}/man${MAN_SECT}/")
+  endif()
 endfunction()
 
 # Install man pages. This deduces the section from the trailing integer in the

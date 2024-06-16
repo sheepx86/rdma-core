@@ -43,6 +43,7 @@
 #include <errno.h>
 #include <string.h>
 #include <linux/types.h>
+#include <stdint.h>
 #include <sys/types.h>
 #include <infiniband/verbs_api.h>
 
@@ -2589,7 +2590,7 @@ __ibv_reg_mr(struct ibv_pd *pd, void *addr, size_t length, unsigned int access,
 #define ibv_reg_mr(pd, addr, length, access)                                   \
 	__ibv_reg_mr(pd, addr, length, access,                                 \
 		     __builtin_constant_p(				       \
-			     ((int)(access) & IBV_ACCESS_OPTIONAL_RANGE) == 0))
+			     ((access) & IBV_ACCESS_OPTIONAL_RANGE) == 0))
 
 /**
  * ibv_reg_mr_iova - Register a memory region with a virtual offset

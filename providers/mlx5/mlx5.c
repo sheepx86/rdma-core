@@ -66,8 +66,6 @@ static bool is_mlx5_dev(struct ibv_device *device);
 #define HCA(v, d) VERBS_PCI_MATCH(PCI_VENDOR_ID_##v, d, NULL)
 const struct verbs_match_ent mlx5_hca_table[] = {
 	VERBS_DRIVER_ID(RDMA_DRIVER_MLX5),
-	HCA(MELLANOX, 0x1011),	/* MT4113 Connect-IB */
-	HCA(MELLANOX, 0x1012),	/* Connect-IB Virtual Function */
 	HCA(MELLANOX, 0x1013),	/* ConnectX-4 */
 	HCA(MELLANOX, 0x1014),	/* ConnectX-4 Virtual Function */
 	HCA(MELLANOX, 0x1015),	/* ConnectX-4LX */
@@ -963,12 +961,6 @@ static int _mlx5dv_query_device(struct ibv_context *ctx_in,
 	if (attrs_out->comp_mask & MLX5DV_CONTEXT_MASK_CRYPTO_OFFLOAD) {
 		attrs_out->crypto_caps = mctx->crypto_caps;
 		comp_mask_out |= MLX5DV_CONTEXT_MASK_CRYPTO_OFFLOAD;
-	}
-
-	if (attrs_out->comp_mask & MLX5DV_CONTEXT_MASK_MAX_DC_RD_ATOM) {
-		attrs_out->max_dc_rd_atom = mctx->max_dc_rd_atom;
-		attrs_out->max_dc_init_rd_atom = mctx->max_dc_init_rd_atom;
-		comp_mask_out |= MLX5DV_CONTEXT_MASK_MAX_DC_RD_ATOM;
 	}
 
 	attrs_out->comp_mask = comp_mask_out;

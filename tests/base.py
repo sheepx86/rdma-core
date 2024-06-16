@@ -163,7 +163,6 @@ class RDMATestCase(unittest.TestCase):
         self.pre_environment = {}
         self.server = None
         self.client = None
-        self.iters = 10
 
 
     def is_eth_and_has_roce_hw_bug(self):
@@ -313,45 +312,6 @@ class RDMATestCase(unittest.TestCase):
         if var not in self.pre_environment.keys():
             self.pre_environment[var] = os.environ.get(var)
         os.environ[var] = value
-
-    def sync_remote_attr(self):
-        """
-        Sync the MR remote attributes between the server and the client.
-        """
-        self.server.rkey = self.client.mr.rkey
-        self.server.raddr = self.client.mr.buf
-        self.client.rkey = self.server.mr.rkey
-        self.client.raddr = self.server.mr.buf
-
-    def pre_run(self):
-        """
-        Configure Resources before running traffic.
-        pre_run() must be implemented by the client and server.
-        """
-        self.client.pre_run(self.server.psns, self.server.qps_num)
-        self.server.pre_run(self.client.psns, self.client.qps_num)
-
-    def create_players(self, resource, sync_attrs=True, **resource_arg):
-        """
-        Init test resources.
-        :param resource: The RDMA resources to use.
-        :param sync_attrs: If True, sync remote attrs such as rkey and raddr
-        :param resource_arg: Dict of args that specify the resource specific
-                             attributes.
-        """
-        try:
-            self.client = resource(**self.dev_info, **resource_arg)
-            self.server = resource(**self.dev_info, **resource_arg)
-        except PyverbsRDMAError as ex:
-            if ex.error_code == errno.EOPNOTSUPP:
-                raise unittest.SkipTest(f'Create player of {resource.__name__} is not supported')
-            raise ex
-        self.pre_run()
-        if sync_attrs:
-            self.sync_remote_attr()
-        self.traffic_args = {'client': self.client, 'server': self.server,
-                             'iters': self.iters, 'gid_idx': self.gid_index,
-                             'port': self.ib_port}
 
     def tearDown(self):
         """
@@ -678,19 +638,12 @@ class TrafficResources(BaseResources):
 
     def pre_run(self, rpsns, rqps_num):
         """
-        Configure resources before running traffic and modifies the QP to RTS
-        if required.
-        :param rpsns: Remote PSNs (packet serial numbers)
+        Modify the QP's states to RTS and fill receive queue with <num_msgs> work
+        requests.
+        This method is not implemented in this class.
+        :param rpsns: Remote PSNs
         :param rqps_num: Remote QPs Number
-        """
-        self.rpsns = rpsns
-        self.rqps_num = rqps_num
-        self.to_rts()
-
-    def to_rts(self):
-        """
-        Modify the QP's states to RTS and initialize it to be ready for traffic.
-        If not required, can be "passed" but must be implemented.
+        :return: None
         """
         raise NotImplementedError()
 
@@ -725,6 +678,17 @@ class RCResources(RoCETrafficResources):
             attr.sq_psn = self.rpsns[i]
             self.qps[i].to_rts(attr)
 
+    def pre_run(self, rpsns, rqps_num):
+        """
+        Configure Resources before running traffic
+        :param rpsns: Remote PSNs (packet serial number)
+        :param rqps_num: Remote QPs number
+        :return: None
+        """
+        self.rpsns = rpsns
+        self.rqps_num = rqps_num
+        self.to_rts()
+
 
 class UDResources(RoCETrafficResources):
     UD_QKEY = 0x11111111
@@ -755,17 +719,15 @@ class UDResources(RoCETrafficResources):
                     raise unittest.SkipTest(f'Create QP type {qp_init_attr.qp_type} is not supported')
                 raise ex
 
-    def to_rts(self):
-        pass
+    def pre_run(self, rpsns, rqps_num):
+        self.rpsns = rpsns
+        self.rqps_num = rqps_num
 
 
 class RawResources(TrafficResources):
     def create_qp_init_attr(self):
         return QPInitAttr(qp_type=e.IBV_QPT_RAW_PACKET, scq=self.cq,
                           rcq=self.cq, srq=self.srq, cap=self.create_qp_cap())
-
-    def pre_run(self, rpsns=None, rqps_num=None):
-        pass
 
 
 class XRCResources(RoCETrafficResources):
@@ -781,10 +743,6 @@ class XRCResources(RoCETrafficResources):
     def close(self):
         os.close(self.xrcd_fd)
         self.temp_file.close()
-
-    @property
-    def qp(self):
-        return self.sqp_lst[0]
 
     def create_qps(self):
         """
@@ -871,3 +829,8 @@ class XRCResources(RoCETrafficResources):
         self.create_xrcd()
         super(XRCResources, self).init_resources()
         self.create_srq()
+
+    def pre_run(self, rpsns, rqps_num):
+        self.rqps_num = rqps_num
+        self.rpsns = rpsns
+        self.to_rts()

@@ -1,10 +1,3 @@
-libmlx4.so.1 ibverbs-providers #MINVER#
-* Build-Depends-Package: libibverbs-dev
- MLX4_1.0@MLX4_1.0 15
- mlx4dv_init_obj@MLX4_1.0 15
- mlx4dv_query_device@MLX4_1.0 15
- mlx4dv_create_qp@MLX4_1.0 15
- mlx4dv_set_context_attr@MLX4_1.0 15
 libmlx5.so.1 ibverbs-providers #MINVER#
 * Build-Depends-Package: libibverbs-dev
  MLX5_1.0@MLX5_1.0 13
@@ -161,17 +154,6 @@ libmlx5.so.1 ibverbs-providers #MINVER#
  mlx5dv_crypto_login_query@MLX5_1.24 42
  mlx5dv_destroy_steering_anchor@MLX5_1.24 42
  mlx5dv_dr_action_create_dest_root_table@MLX5_1.24 42
-libefa.so.1 ibverbs-providers #MINVER#
-* Build-Depends-Package: libibverbs-dev
- EFA_1.0@EFA_1.0 24
- EFA_1.1@EFA_1.1 26
- EFA_1.2@EFA_1.2 43
- efadv_create_driver_qp@EFA_1.0 24
- efadv_create_qp_ex@EFA_1.1 26
- efadv_query_device@EFA_1.1 26
- efadv_query_ah@EFA_1.1 26
- efadv_cq_from_ibv_cq_ex@EFA_1.2 43
- efadv_create_cq@EFA_1.2 43
 libmana.so.1 ibverbs-providers #MINVER#
 * Build-Depends-Package: libibverbs-dev
  MANA_1.0@MANA_1.0 41

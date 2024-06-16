@@ -280,6 +280,8 @@ Each **dests** destination array entry can be of different **type**. Use type ML
 Action: Packet Reformat
 *mlx5dv_dr_action_create_packet_reformat* create a packet reformat context and action in the **domain**. The **reformat_type**, **data_sz** and **data** are defined in *man mlx5dv_create_flow_action_packet_reformat*.
 
+**MLX5DV_DR_ACTION_FLAGS_ROOT_LEVEL**: is used to indicate the action is targeted for flow table in level=0 (ROOT) of the specific domain.
+
 Action: Modify Header
 *mlx5dv_dr_action_create_modify_header* create a modify header context and action in the **domain**. The **actions_sz** and **actions** are defined in *man mlx5dv_create_flow_action_modify_header*.
 
@@ -321,8 +323,6 @@ Action: Pop Vlan
 
 Action: Push Vlan
 *mlx5dv_dr_action_create_push_vlan* creates a push vlan action which adds VLAN tags to packets layer 2.
-
-**MLX5DV_DR_ACTION_FLAGS_ROOT_LEVEL**: is used to indicate the action is targeted for flow table in level=0 (ROOT) of the specific domain.
 
 ## Rule
 *mlx5dv_dr_rule_create()* creates a HW steering rule entry in **matcher**. The **value** of type *struct mlx5dv_flow_match_parameters* holds the exact attribute values of the steering rule to be matched, in a device spec format. Only the fields that where masked in the *matcher* should be filled.

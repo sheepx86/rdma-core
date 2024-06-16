@@ -11,4 +11,4 @@ LOG=/var/log/srp_daemon.log
 
 PORTS=NONE
 #PORTS=ALL
-#PORTS="mthca0:1 mlx4_0:2"
+#PORTS="mthca0:1 mlx5_0:2"

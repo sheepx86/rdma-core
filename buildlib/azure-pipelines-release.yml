@@ -46,5 +46,3 @@ stages:
               action: create
               isDraft: true
               addChangeLog: true
-              changeLogCompareToRelease: lastNonDraftReleaseByTag
-              changeLogCompareToReleaseTag: v47.*

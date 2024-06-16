@@ -59,12 +59,6 @@ rdma_man_pages(
   man/ibacm_prov.7.in
   )
 
-# FIXME: update the .init.in
-rdma_subst_install(FILES "ibacm.init.in"
-  DESTINATION "${CMAKE_INSTALL_INITDDIR}"
-  RENAME "ibacm"
-  PERMISSIONS OWNER_WRITE OWNER_READ GROUP_READ WORLD_READ OWNER_EXECUTE GROUP_EXECUTE WORLD_EXECUTE)
-
 rdma_subst_install(FILES "ibacm.service.in"
   DESTINATION "${CMAKE_INSTALL_SYSTEMD_SERVICEDIR}"
   RENAME ibacm.service

@@ -52,6 +52,9 @@
 #      Disable man pages. Allows rdma-core to be built and installed
 #      (without man pages) when neither pandoc/rst2man nor the pandoc-prebuilt
 #      directory are available.
+#   -DENABLE_SRP_COMPAT=1 (default disabled)
+#      Avoid using modern parameters in the systemd unit files to keep
+#      compatibility with old systemd versions.
 
 if (${CMAKE_VERSION} VERSION_LESS "3.18.1")
 	# Centos 7 support
@@ -77,7 +80,7 @@ endif()
 set(PACKAGE_NAME "RDMA")
 
 # See Documentation/versioning.md
-set(PACKAGE_VERSION "47.3")
+set(PACKAGE_VERSION "47.0")
 # When this is changed the values in these files need changing too:
 #   debian/control
 #   debian/libibverbs1.symbols
@@ -170,13 +173,16 @@ set(DISTRO_FLAVOUR "None" CACHE
   STRING "Flavour of distribution to install for. This primarily impacts the init.d scripts installed.")
 
 #-------------------------
+# Add MLNX OFED compat headers to build against old kernels
+execute_process(COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/mlnx-compat-includes" "${BUILD_INCLUDE}")
+
+#-------------------------
 # Load CMake components
 set(BUILDLIB "${PROJECT_SOURCE_DIR}/buildlib")
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${BUILDLIB}")
 
 include(CMakeParseArguments)
 include(CheckCCompilerFlag)
-include(CheckCSourceCompiles)
 include(CheckIncludeFile)
 include(CheckTypeSize)
 include(RDMA_EnableCStd)
@@ -214,9 +220,9 @@ endif()
 
 # Look for Python. We prefer some variant of python 3 if the system has it.
 FIND_PACKAGE(PythonInterp 3 QUIET)
-if (PythonInterp_FOUND)
+if (${PythonInterp_FOUND})
   # pyverbs can only use python3:
-  if (NO_PYVERBS)
+  if (${NO_PYVERBS})
     set(CYTHON_EXECUTABLE "")
   else()
     FIND_PACKAGE(cython)
@@ -708,6 +714,7 @@ add_subdirectory(librdmacm/man)
 
 # Providers
 if (HAVE_COHERENT_DMA)
+if (0)
 add_subdirectory(providers/bnxt_re)
 add_subdirectory(providers/cxgb4) # NO SPARSE
 add_subdirectory(providers/efa)
@@ -719,19 +726,24 @@ add_subdirectory(providers/mana)
 add_subdirectory(providers/mana/man)
 add_subdirectory(providers/mlx4)
 add_subdirectory(providers/mlx4/man)
+endif()
 add_subdirectory(providers/mlx5)
 add_subdirectory(providers/mlx5/man)
+if (0)
 add_subdirectory(providers/mthca)
 add_subdirectory(providers/ocrdma)
 add_subdirectory(providers/qedr)
 add_subdirectory(providers/vmw_pvrdma)
 endif()
+endif()
 
+if (0)
 add_subdirectory(providers/hfi1verbs)
 add_subdirectory(providers/ipathverbs)
 add_subdirectory(providers/rxe)
 add_subdirectory(providers/rxe/man)
 add_subdirectory(providers/siw)
+endif()
 
 add_subdirectory(libibmad)
 add_subdirectory(libibnetdisc)
@@ -750,8 +762,10 @@ if (NOT NL_KIND EQUAL 0)
   add_subdirectory(ibacm) # NO SPARSE
 endif()
 
+if (0)
 if (NOT NL_KIND EQUAL 0)
   add_subdirectory(iwpmd)
+endif()
 endif()
 add_subdirectory(libibumad/tests)
 add_subdirectory(libibverbs/examples)
